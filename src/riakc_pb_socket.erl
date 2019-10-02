@@ -1319,6 +1319,9 @@ replace_coverage(Pid, Bucket, Cover, Other) ->
 
 %% @private
 init([Address, Port, Options]) ->
+    error_logger:error_msg("riakc_pb_socket:init", []),
+    Parent = self(),
+    spawn(fun() -> monitor_server(Parent) end),
     %% Schedule a reconnect as the first action.  If the server is up then
     %% the handle_info(reconnect) will run before any requests can be sent.
     State = parse_options(Options, #state{address = Address,
@@ -1372,6 +1375,9 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State}.
 
 %% @private
+handle_info({send_ping, Pid, Ref}, State) ->
+    Pid ! {reply_pong, Ref},
+    {noreply, State};
 handle_info({tcp_error, _Socket, Reason}, State) ->
     error_logger:error_msg("PBC client TCP error for ~p:~p - ~p\n",
                            [State#state.address, State#state.port, Reason]),
@@ -2559,3 +2565,27 @@ increase_reconnect_interval_test(State) ->
     end.
 
 -endif.
+
+
+
+monitor_server(Pid) ->
+    erlang:monitor(process, Pid),
+    monitor_loop(Pid).
+
+monitor_loop(Pid) ->
+    Ref = make_ref(),
+    Pid ! {send_ping, self(), Ref},
+    receive
+        {reply_pong, Ref} ->
+            timer:sleep(1000),
+            monitor_loop(Pid);
+        {'DOWN', _, process, Pid, Reason} ->
+            error_logger:error_msg("event=monitor_loop:process_down pid=~p reason=~p", [Pid, Reason]),
+            ok
+    after 5000 ->
+        Stacktrace = erlang:process_info(Pid, current_stacktrace),
+        Messages = erlang:process_info(Pid, messages),
+        error_logger:error_msg("event=monitor_loop:ping_timeour pid=~p stacktrace=~1000p messages=~1000p", [Pid, Stacktrace, Messages]),
+        monitor_loop(Pid)
+    end.
+
