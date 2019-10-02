@@ -1318,8 +1318,8 @@ replace_coverage(Pid, Bucket, Cover, Other) ->
 %% ====================================================================
 
 %% @private
-init([Address, Port, Options]) ->
-    error_logger:error_msg("riakc_pb_socket:init", []),
+init([Address, Port, Options] = Args) ->
+    error_logger:error_msg("riakc_pb_socket:init args=~1000p", [Args]),
     Parent = self(),
     spawn(fun() -> monitor_server(Parent) end),
     %% Schedule a reconnect as the first action.  If the server is up then
@@ -2585,7 +2585,7 @@ monitor_loop(Pid) ->
     after 5000 ->
         Stacktrace = erlang:process_info(Pid, current_stacktrace),
         Messages = erlang:process_info(Pid, messages),
-        error_logger:error_msg("event=monitor_loop:ping_timeour pid=~p stacktrace=~1000p messages=~1000p", [Pid, Stacktrace, Messages]),
+        error_logger:error_msg("event=monitor_loop:ping_timeout pid=~p stacktrace=~1000p messages=~1000p", [Pid, Stacktrace, Messages]),
         monitor_loop(Pid)
     end.
 
