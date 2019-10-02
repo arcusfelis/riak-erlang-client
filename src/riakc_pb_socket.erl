@@ -1327,7 +1327,8 @@ init([Address, Port, Options]) ->
     case connect(State) of
         {error, Reason} when State#state.auto_reconnect /= true ->
             {stop, {tcp, Reason}};
-        {error, _Reason} ->
+        {error, Reason} ->
+            error_logger:error_msg("Failed to connect to ~p:~p reason=~p", [Address, Port, Reason]),
             erlang:send_after(State#state.reconnect_interval, self(), reconnect),
             {ok, State};
         Ok ->
@@ -2198,7 +2199,7 @@ connect(State) when State#state.sock =:= undefined ->
     end.
 
 -spec start_tls(#state{}) -> {ok, #state{}} | {error, term()}.
-start_tls(State=#state{sock=Sock}) ->
+start_tls(State=#state{sock=Sock, connect_timeout=ConnectTimeout}) ->
     %% Send STARTTLS
     StartTLSCode = riak_pb_codec:msg_code(rpbstarttls),
     ok = gen_tcp:send(Sock, <<StartTLSCode:8>>),
@@ -2235,9 +2236,13 @@ start_tls(State=#state{sock=Sock}) ->
                     %% communication to the server.
                     {error, no_security}
             end
+    after ConnectTimeout ->
+              Queue = erlang:process_info(self(), messages),
+              error_logger:error_msg("event=start_tls_failed state=~1000p queue=~1000p", [State, Queue]),
+              {error, ssl_start_tls_timeout}
     end.
 
-start_auth(State=#state{credentials={User,Pass}, sock=Sock}) ->
+start_auth(State=#state{credentials={User,Pass}, sock=Sock, connect_timeout=ConnectTimeout}) ->
     ok = ssl:send(Sock, riak_pb_codec:encode(#rpbauthreq{user=User,
                                                          password=Pass})),
     receive
@@ -2254,6 +2259,10 @@ start_auth(State=#state{credentials={User,Pass}, sock=Sock}) ->
                 #rpberrorresp{} = Err ->
                     fmt_err_msg(Err)
             end
+    after ConnectTimeout ->
+              Queue = erlang:process_info(self(), messages),
+              error_logger:error_msg("event=start_auth_failed state=~1000p queue=~1000p", [State, Queue]),
+              {error, ssl_start_auth_timeout}
     end.
 
 %% @private
